@@ -1,0 +1,7 @@
+seqID	patternName	pattern	strand	start	end	matched
+chr1	ATGC	ATGC	+	1	4	ATGC
+chr1	ATGC	ATGC	+	5	8	ATGC
+chr1	ATGC	ATGC	+	9	12	ATGC
+chr1	ATGC	ATGC	+	17	20	ATGC
+chr2	ATGC	ATGC	+	5	8	ATGC
+chr3	ATGC	ATGC	+	5	8	ATGC

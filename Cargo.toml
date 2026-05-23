@@ -1,0 +1,27 @@
+[package]
+name = "rsomics-fasta-locate"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/omics-rust/rsomics-world"
+authors = ["Zane Leong <efd@live.com>"]
+description = "Locate subsequences/motifs in FASTA files — seqkit locate port"
+
+[[bin]]
+name = "rsomics-fasta-locate"
+path = "src/main.rs"
+
+[lib]
+name = "rsomics_fasta_locate"
+path = "src/lib.rs"
+
+[dependencies]
+rsomics-common = { version = "0.6" }
+rsomics-help = { version = "0.3" }
+clap = { version = "4", features = ["derive"] }
+needletail = "0.6"
+aho-corasick = "1"
+regex = "1"
+memchr = "2"
+rayon = "1"
