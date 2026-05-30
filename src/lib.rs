@@ -6,35 +6,24 @@ use needletail::parse_fastx_file;
 use rayon::prelude::*;
 use rsomics_common::{Result, RsomicsError};
 
-/// Output format for locate results.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum OutputFormat {
-    /// Tab-separated: seqID patternName pattern strand start end [matched]
     #[default]
     Tsv,
-    /// BED6: chrom start(0-based) end name score strand
     Bed,
-    /// GTF
     Gtf,
 }
 
-/// One named pattern to locate.
 #[derive(Clone)]
 pub struct Pattern {
-    /// Display name (FASTA id when loaded from file, else the literal text).
     pub name: String,
-    /// The pattern text as given (literal or regex string).
     pub text: String,
 }
 
-/// Options for locate.
 pub struct LocateOpts {
     pub patterns: Vec<Pattern>,
-    /// Treat patterns as regular expressions.
     pub use_regexp: bool,
-    /// Case-insensitive search.
     pub ignore_case: bool,
-    /// Search only the positive strand.
     pub only_positive: bool,
     /// Do not include the matched sequence column (TSV only).
     pub hide_matched: bool,
@@ -43,17 +32,14 @@ pub struct LocateOpts {
 
 /// Locate patterns in every sequence in `input`, writing results to `output`.
 ///
-/// Coordinates follow seqkit convention: 1-based inclusive on the original
-/// (positive) sequence.  Negative-strand matches are reported at positions
-/// mapped back from the reverse-complement.
+/// Coordinates: 1-based inclusive on the original (positive) sequence.
+/// Negative-strand hits map back from the reverse-complement.
 ///
-/// Column semantics for TSV (matching seqkit):
-/// - patternName: the original query name (unchanged)
-/// - pattern: when `ignore_case`, the matched text lowercased; otherwise the query text
-/// - matched: actual matched bytes; when `ignore_case`, lowercased
+/// TSV column semantics (seqkit-compatible):
+/// - pattern: when `ignore_case`, lowercased matched text; otherwise the query text
+/// - matched: actual matched bytes; lowercased when `ignore_case`
 ///
-/// Records are read sequentially then scanned in parallel (rayon).  Output
-/// preserves input order.
+/// Output preserves input order.
 pub fn locate_fasta(input: &Path, opts: &LocateOpts, output: &mut dyn Write) -> Result<u64> {
     if std::fs::metadata(input).is_ok_and(|m| m.len() == 0) {
         return Err(RsomicsError::InvalidInput("empty file".into()));
@@ -61,7 +47,6 @@ pub fn locate_fasta(input: &Path, opts: &LocateOpts, output: &mut dyn Write) -> 
 
     let compiled = compile_patterns(opts)?;
 
-    // Read all records into owned buffers (sequential, IO-bound).
     let mut records: Vec<(String, Vec<u8>)> = Vec::new();
     {
         let mut reader = parse_fastx_file(input)
@@ -76,7 +61,6 @@ pub fn locate_fasta(input: &Path, opts: &LocateOpts, output: &mut dyn Write) -> 
         }
     }
 
-    // Scan all records in parallel, collect per-record hit lines in input order.
     let per_record_lines: Vec<(Vec<u8>, u64)> = records
         .par_iter()
         .map(|(seq_id, seq)| {
@@ -122,7 +106,6 @@ pub fn locate_fasta(input: &Path, opts: &LocateOpts, output: &mut dyn Write) -> 
         })
         .collect();
 
-    // Write header then per-record results in input order.
     let mut out = BufWriter::with_capacity(512 * 1024, output);
     if opts.format == OutputFormat::Tsv {
         if opts.hide_matched {
@@ -198,10 +181,7 @@ fn format_hit(
     }
 }
 
-/// A compiled search pattern — either a literal byte slice or a regex.
-///
-/// Both variants are `Send + Sync` (regex::bytes::Regex is explicitly so),
-/// allowing rayon to share compiled patterns across threads.
+// Both variants are Send+Sync; rayon shares them across threads without cloning.
 enum CompiledPattern {
     Literal(Vec<u8>),
     Regex(regex::bytes::Regex),
@@ -230,10 +210,9 @@ fn compile_patterns(opts: &LocateOpts) -> Result<Vec<CompiledPattern>> {
 
 /// Return all `(start0, end0_exclusive, matched_str)` hits for `pattern` in `seq`.
 ///
-/// For literal patterns: SIMD-accelerated first-byte scan via `memchr` followed
-/// by a byte-by-byte confirmation of the remaining chars.  This skips most
-/// positions at SIMD speed (16-32 bytes/cycle on x86/ARM) and is 3-5×
-/// faster than a naive sliding window for motifs whose first base is infrequent.
+/// Literal patterns: memchr first-byte scan then byte-by-byte confirmation.
+/// Skips non-matching positions at SIMD speed; 3-5× faster than a naive
+/// sliding window when the first base is infrequent.
 fn find_hits(seq: &[u8], pat: &CompiledPattern, ignore_case: bool) -> Vec<(usize, usize, String)> {
     match pat {
         CompiledPattern::Literal(lit) => {
